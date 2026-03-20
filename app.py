@@ -9,8 +9,8 @@ import io
 import numpy as np
 
 # 페이지 설정
-st.set_page_config(page_title="Professional Map Generator", layout="wide")
-st.title("🗺️ Map Generator ")
+st.set_page_config(page_title="High-Res Map Generator", layout="wide")
+st.title("🗺️ Pro Map Generator (Fast Preview & 300 DPI Save)")
 
 # 데이터 경로
 current_folder = os.path.dirname(os.path.abspath(__file__))
@@ -20,6 +20,7 @@ land_110m = os.path.join(current_folder, "ne_110m_land.shp")
 @st.cache_data
 def load_data(path):
     if not os.path.exists(path): return None
+    # 10m 데이터는 무거우므로 로딩 시 캐싱을 확실히 활용합니다.
     return gpd.read_file(path)
 
 # 1. 사이드바 설정
@@ -30,10 +31,10 @@ with st.sidebar:
     st.divider()
     
     st.subheader("2. Map Range / Center")
-    lon_min = st.number_input("Min Longitude", value=120.0)
-    lon_max = st.number_input("Max Longitude", value=135.0)
-    lat_min = st.number_input("Min Latitude", value=30.0)
-    lat_max = st.number_input("Max Latitude", value=45.0)
+    lon_min = st.number_input("Min Longitude", value=124.0)
+    lon_max = st.number_input("Max Longitude", value=132.0)
+    lat_min = st.number_input("Min Latitude", value=33.0)
+    lat_max = st.number_input("Max Latitude", value=39.0)
     
     st.divider()
     
@@ -41,11 +42,11 @@ with st.sidebar:
     show_grid = st.radio("Show Grid Lines", ("Y", "N"), index=0)
     grid_interval = st.select_slider("Grid Interval", options=[5, 10, 15, 20, 25, 30], value=5)
 
-# 2. 로직 처리
+# 2. 중심점 및 데이터 선택
 center_lon = (lon_min + lon_max) / 2
 center_lat = (lat_min + lat_max) / 2
 
-# 데이터 선택 (Sphere만 110m, 나머지는 10m)
+# Flat/Curved는 10m(상세), Sphere는 110m(구형 최적화) 사용
 target_path = land_110m if proj_choice == "Sphere" else land_10m
 world_land = load_data(target_path)
 
@@ -58,19 +59,20 @@ if world_land is not None:
     else:
         target_crs = ccrs.PlateCarree()
 
-    # --- 핵심: 비율 왜곡 방지 ---
-    # Flat 모드에서 위도에 따른 가로 길어짐을 방지하기 위해 가로세로 비율 계산
+    # --- 가로세로 비율 보정 (Flat 모드) ---
     if proj_choice == "Flat":
-        aspect = 1 / np.cos(np.radians(center_lat)) # 위도에 따른 보정값
+        aspect = 1 / np.cos(np.radians(center_lat))
+        data_ratio = (lon_max - lon_min) / (lat_max - lat_min)
         fig_width = 10
-        fig_height = 10 / ((lon_max-lon_min)/(lat_max-lat_min) * (1/aspect))
-        fig, ax = plt.subplots(figsize=(fig_width, min(fig_height, 15)), dpi=200, subplot_kw={'projection': target_crs})
+        fig_height = fig_width / (data_ratio / aspect)
+        # 화면 출력용 Fig 생성 (DPI 낮춤)
+        fig, ax = plt.subplots(figsize=(fig_width, min(fig_height, 15)), dpi=80, subplot_kw={'projection': target_crs})
     else:
-        fig, ax = plt.subplots(figsize=(10, 10), dpi=200, subplot_kw={'projection': target_crs})
+        fig, ax = plt.subplots(figsize=(10, 10), dpi=80, subplot_kw={'projection': target_crs})
 
     ax.set_facecolor('#FFFFFF')
 
-    # 육지 그리기 (속도를 위해 buffer(0) 생략, 필요시에만 로드 함수에서 처리)
+    # 육지 그리기
     world_land.plot(ax=ax, transform=ccrs.PlateCarree(), color='#E0E0E0', edgecolor='#AAAAAA', linewidth=0.3)
 
     if proj_choice == "Sphere":
@@ -88,9 +90,19 @@ if world_land is not None:
             gl.top_labels = gl.right_labels = False
             gl.xformatter, gl.yformatter = LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 
+    # 3. 화면 표시 (미리보기는 저해상도로 빠르게)
     st.pyplot(fig)
 
-    # 다운로드
+    # 4. 고해상도 다운로드 로직
+    # 버튼을 누르는 순간 300 DPI로 다시 렌더링하여 메모리에 담습니다.
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches='tight')
-    st.download_button("📥 Download Map", data=buf.getvalue(), file_name="map.png")
+    fig.savefig(buf, format="png", bbox_inches='tight', dpi=300)
+    
+    st.download_button(
+        label="📥 Download Illustrator-Ready Map (300 DPI)",
+        data=buf.getvalue(),
+        file_name="map_highres.png",
+        mime="image/png"
+    )
+else:
+    st.error("Data file not found.")
