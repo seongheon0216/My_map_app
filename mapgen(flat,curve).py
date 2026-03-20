@@ -48,7 +48,35 @@ with st.sidebar:
         options=[5, 10, 15, 20, 25, 30],
         value=5
     )
+# ... (앞부분 동일)
 
+# 2. 지도 생성 로직
+if world_land is not None:
+    # 위도 범위 체크 (Albers 투영법의 한계 극복)
+    lat_diff = lat_max - lat_min
+    
+    if proj_choice == "Curved" and lat_diff >= 120:
+        # 위도 차이가 120도 이상이면 Albers 투영이 깨질 확률이 매우 높음
+        st.warning("⚠️ Curved 모드에서는 위도 범위를 조금 더 좁게 설정해주세요. (전 세계를 보려면 Flat 모드 권장)")
+    else:
+        # 기존 로직 실행
+        center_lon = (lon_min + lon_max) / 2
+        center_lat = (lat_min + lat_max) / 2
+
+        # Clipping 및 투영 설정 (이전과 동일)
+        clip_box = box(lon_min - 1, lat_min - 1, lon_max + 1, lat_max + 1)
+        world_land_clipped = world_land.clip(clip_box)
+
+        if proj_choice == "Curved":
+            p1 = lat_min + (lat_diff * 0.25)
+            p2 = lat_min + (lat_diff * 0.75)
+            target_crs = ccrs.AlbersEqualArea(central_longitude=center_lon, 
+                                               central_latitude=center_lat, 
+                                               standard_parallels=(p1, p2))
+        else:
+            target_crs = ccrs.PlateCarree()
+
+        # ... (이하 지도 그리기 및 다운로드 로직 동일)
 # 2. 지도 생성 로직
 if world_land is not None:
     # 중심 및 위도 범위 계산
