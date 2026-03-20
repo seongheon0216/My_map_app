@@ -105,3 +105,4 @@ if world_land is not None:
     fig.savefig(buf, format="png", bbox_inches='tight', pad_inches=0.1)
     st.download_button(label="📥 Download Map", data=buf.getvalue(), file_name="map.png")
 else:
+    st.error("Data file (ne_110m_land.shp) not found in repository.")
