@@ -11,7 +11,7 @@ from shapely.geometry import box
 
 # 1. 페이지 설정
 st.set_page_config(page_title="High-Res Map Pro", layout="wide")
-st.title("🗺️ Professional Map Generator (Fixed Ratio)")
+st.title("Map Generator (Flat/Curved)")
 
 # 2. 데이터 로드 (10m 고해상도 고정)
 current_folder = os.path.dirname(os.path.abspath(__file__))
@@ -28,7 +28,7 @@ world_land = load_data()
 # 3. 사이드바 설정
 with st.sidebar:
     st.header("🛠️ Settings")
-    proj_choice = st.radio("Select Style", ("Flat", "Curved")
+    proj_choice = st.radio("Select Style", ("Flat", "Curved"))
     
     st.divider()
     
