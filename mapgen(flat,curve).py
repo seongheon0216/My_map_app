@@ -28,7 +28,7 @@ world_land = load_data()
 # 3. 사이드바 설정
 with st.sidebar:
     st.header("🛠️ Settings")
-    proj_choice = st.radio("Select Style", ("Flat", "Curved"), help="Flat: PlateCarree / Curved: Albers Equal Area")
+    proj_choice = st.radio("Select Style", ("Flat", "Curved")
     
     st.divider()
     
