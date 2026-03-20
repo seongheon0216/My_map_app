@@ -11,18 +11,27 @@ import io
 st.set_page_config(page_title="Professional Map Generator", layout="wide")
 st.title("🗺️ Map Generator (Auto-Switching)")
 
-# 데이터 경로 설정
+# 1. 데이터 경로 설정 (상대 경로 보강)
 current_folder = os.path.dirname(os.path.abspath(__file__))
-land_10m = os.path.join(current_folder, "ne_10m_land.shp")
-land_110m = os.path.join(current_folder, "ne_110m_land.shp")
+
+def get_data_path(filename):
+    return os.path.join(current_folder, filename)
 
 @st.cache_data
-def load_data(path):
+def load_and_fix_data(path, is_globe=False):
     if os.path.exists(path):
-        return gpd.read_file(path)
+        try:
+            gdf = gpd.read_file(path)
+            if is_globe:
+                # --- 핵심: 지구본 모드일 때 대륙 삼각형 깨짐 방지 ---
+                # 폴리곤의 꼬인 부분을 수학적으로 펴주는 작업 (buffer 0)
+                gdf['geometry'] = gdf['geometry'].buffer(0)
+            return gdf
+        except Exception as e:
+            st.error(f"Error loading {os.path.basename(path)}: {e}")
     return None
 
-# 1. 사이드바 입력 설정
+# 2. 사이드바 설정
 with st.sidebar:
     st.subheader("1. Projection Style")
     proj_choice = st.radio("Select Style", ("Flat (Straight)", "Curved (Conic)"))
@@ -39,27 +48,17 @@ with st.sidebar:
     
     st.subheader("3. Grid Settings")
     show_grid = st.radio("Show Grid Lines", ("Y", "N"), index=0)
-    grid_interval = st.select_slider(
-        "Grid Interval (degrees)",
-        options=[5, 10, 15, 20, 25, 30],
-        value=5
-    )
+    grid_interval = st.select_slider("Grid Interval", options=[5, 10, 15, 20, 25, 30], value=5)
 
-# 2. 로직 처리
+# 3. 로직 처리
 lon_range = abs(lon_max - lon_min)
 lat_range = abs(lat_max - lat_min)
-# 경도 180도 또는 위도 90도 이상 차이 나면 '최대 범위'로 간주 (지구본 모드)
-is_max_range = lon_range >= 179.9 or lat_range >= 89.9
+is_max_range = lon_range >= 179.0 or lat_range >= 89.0
 
-# 상황에 맞는 데이터 로드
-if is_max_range:
-    world_land = load_data(land_110m)
-    if world_land is not None:
-        st.info("🌐 Max range detected: Using 110m globe data.")
-else:
-    world_land = load_data(land_10m)
+# 데이터 선택 로드
+target_path = get_data_path("ne_110m_land.shp" if is_max_range else "ne_10m_land.shp")
+world_land = load_and_fix_data(target_path, is_globe=is_max_range)
 
-# 지도 생성 시작
 if world_land is not None:
     center_lon = (lon_min + lon_max) / 2
     center_lat = (lat_min + lat_max) / 2
@@ -72,13 +71,16 @@ if world_land is not None:
     else:
         target_crs = ccrs.PlateCarree()
 
-    # 도화지 생성 (1:1 비율로 찌그러짐 방지)
+    # 도화지 생성 (1:1 비율 고정으로 찌그러짐 방지)
     fig, ax = plt.subplots(figsize=(10, 10), dpi=300, subplot_kw={'projection': target_crs})
     ax.set_facecolor('#FFFFFF')
 
     # 육지 그리기
-    world_land_projected = world_land.to_crs(target_crs)
-    world_land_projected.plot(ax=ax, color='#E0E0E0', edgecolor='#AAAAAA', linewidth=0.3)
+    try:
+        world_land_projected = world_land.to_crs(target_crs)
+        world_land_projected.plot(ax=ax, color='#E0E0E0', edgecolor='#AAAAAA', linewidth=0.3)
+    except:
+        world_land.plot(ax=ax, color='#E0E0E0', edgecolor='#AAAAAA', linewidth=0.3)
 
     # 범위 설정
     if is_max_range:
@@ -86,25 +88,21 @@ if world_land is not None:
     else:
         ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
 
-    # 격자선 설정
+    # 격자선
     if show_grid == 'Y':
-        # 지구본일 때는 라벨 숨김 (깔끔함 유지)
         gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=not is_max_range,
                           linestyle='--', linewidth=0.5, color='#AAAAAA')
         gl.xlocator = mticker.MultipleLocator(grid_interval)
         gl.ylocator = mticker.MultipleLocator(grid_interval)
         if not is_max_range:
-            gl.top_labels = False
-            gl.right_labels = False
-            gl.xformatter = LONGITUDE_FORMATTER
-            gl.yformatter = LATITUDE_FORMATTER
+            gl.top_labels, gl.right_labels = False, False
+            gl.xformatter, gl.yformatter = LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 
-    # 결과 표시
     st.pyplot(fig)
 
-    # 다운로드 버튼
+    # 다운로드
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches='tight', pad_inches=0.1)
-    st.download_button(label="📥 Download Map", data=buf.getvalue(), file_name="custom_map.png")
+    st.download_button("📥 Download Map", data=buf.getvalue(), file_name="map.png")
 else:
-    st.error("Data file not found. Please ensure .shp files are in the repository.")
+    st.error(f"파일을 찾을 수 없습니다: {os.path.basename(target_path)}")
