@@ -9,7 +9,7 @@ import matplotlib.ticker as mticker
 
 # 페이지 설정
 st.set_page_config(page_title="Map Generator Pro", layout="wide")
-st.title("🗺️ Map Generator (Flat & Curved)")
+st.title("🗺️ Map Generator")
 st.sidebar.header("Settings")
 
 # 데이터 경로
