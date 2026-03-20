@@ -11,7 +11,7 @@ from shapely.geometry import box
 
 # 1. 페이지 설정 및 제목
 st.set_page_config(page_title="Universal High-Res Map Pro", layout="wide")
-st.title("Map Generator (Flat/Curved)")
+st.title("🌍 Universal High-Res Map Generator (Fixed Ratio)")
 
 # 2. 데이터 로드 (전세계 데이터)
 current_folder = os.path.dirname(os.path.abspath(__file__))
@@ -33,16 +33,16 @@ with st.sidebar:
     st.divider()
     
     st.subheader("📍 Coordinates (Anywhere)")
-    lon_min = st.number_input("Min Longitude", value=120.0)
-    lon_max = st.number_input("Max Longitude", value=135.0)
-    lat_min = st.number_input("Min Latitude", value=30.0)
-    lat_max = st.number_input("Max Latitude", value=45.0)
+    lon_min = st.number_input("Min Longitude", value=115.0)
+    lon_max = st.number_input("Max Longitude", value=145.0)
+    lat_min = st.number_input("Min Latitude", value=25.0)
+    lat_max = st.number_input("Max Latitude", value=55.0)
     
     st.divider()
     
     st.subheader("📏 Grid & Design")
     show_grid = st.radio("Show Grid Lines", ("Y", "N"), index=0)
-    grid_interval = st.select_slider("Interval (deg)", options=[5, 10, 15, 20, 25, 30, 45], value=5)
+    grid_interval = st.select_slider("Interval (deg)", options=[1, 2, 5, 10], value=5)
 
 # 4. 지도 생성 로직
 if world_land is not None:
@@ -101,4 +101,21 @@ if world_land is not None:
         if show_grid == 'Y':
             gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True, 
                               linestyle='-', linewidth=0.5, color='#AAAAAA', alpha=0.7)
-            gl.top_labels
+            gl.top_labels = gl.right_labels = False
+            gl.xformatter, gl.yformatter = LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+            gl.xlocator = mticker.MultipleLocator(grid_interval)
+            gl.ylocator = mticker.MultipleLocator(grid_interval)
+
+        # 5. 결과 표시 및 고해상도 다운로드
+        st.pyplot(fig)
+
+        # 다운로드 시에만 300 DPI 렌더링
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", bbox_inches='tight', dpi=300, facecolor='#FFFFFF')
+        
+        st.download_button(label="📥 Download High-Res Map (300 DPI)", 
+                           data=buf.getvalue(), 
+                           file_name=f"map_output.png", 
+                           mime="image/png")
+else:
+    st.error("⚠️ 데이터 파일을 찾을 수 없습니다.")
