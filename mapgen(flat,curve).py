@@ -53,28 +53,35 @@ if world_land is not None:
     center_lon = (lon_min + lon_max) / 2
     center_lat = (lat_min + lat_max) / 2
 
-    # Clipping
-    clip_box = box(lon_min - 2, lat_min - 2, lon_max + 2, lat_max + 2)
-    world_land_clipped = world_land.clip(clip_box)
-
-    # --- 투영법 및 도화지 비율 설정 ---
-    if proj_choice == "Curved":
-        p1 = lat_min + (lat_diff * 0.25)
-        p2 = lat_min + (lat_diff * 0.75)
-        target_crs = ccrs.AlbersEqualArea(central_longitude=center_lon, 
-                                           central_latitude=center_lat, 
-                                           standard_parallels=(p1, p2))
-        # 🛠️ 수동 보정 없이 가로로 넉넉한 도화지(12x8) 사용 (가로 압축 방지)
-        fig = plt.figure(figsize=(12, 8), dpi=100)
+    # 🛠️ [핵심] Curved 모드 위도 한계 체크 (120도 제한)
+    if proj_choice == "Curved" and lat_diff >= 120:
+        st.error(f"❌ Curved 모드는 위도 범위를 120도 이내로 설정해야 오류가 나지 않습니다. (현재 차이: {lat_diff:.1f}도)")
+        st.info("💡 범위를 좁히거나 'Flat' 모드를 사용해 주세요.")
+    
+    # 위도 차이가 120도 미만일 때만 지도 생성 진행
     else:
-        target_crs = ccrs.PlateCarree()
-        aspect = 1 / np.cos(np.radians(center_lat))
-        fig_width = 12
-        fig_height = fig_width / ((lon_diff / lat_diff) / aspect)
-        fig = plt.figure(figsize=(fig_width, min(fig_height, 15)), dpi=100)
+        # Clipping (속도 최적화)
+        clip_box = box(lon_min - 2, lat_min - 2, lon_max + 2, lat_max + 2)
+        world_land_clipped = world_land.clip(clip_box)
 
-    ax = fig.add_subplot(1, 1, 1, projection=target_crs)
-    ax.set_facecolor('#FFFFFF')
+        # --- 투영법 설정 ---
+        if proj_choice == "Curved":
+            # Albers 투영법 설정 (안전한 표준 위도 p1, p2 계산)
+            p1 = lat_min + (lat_diff * 0.25)
+            p2 = lat_min + (lat_diff * 0.75)
+            target_crs = ccrs.AlbersEqualArea(central_longitude=center_lon, 
+                                               central_latitude=center_lat, 
+                                               standard_parallels=(p1, p2))
+            fig = plt.figure(figsize=(12, 8), dpi=100)
+        else:
+            # Flat 모드 설정
+            target_crs = ccrs.PlateCarree()
+            aspect = 1 / np.cos(np.radians(center_lat))
+            fig_width = 12
+            fig_height = fig_width / ((lon_diff / lat_diff) / aspect)
+            fig = plt.figure(figsize=(fig_width, min(fig_height, 15)), dpi=100)
+
+        # (이하 지도 그리기 및 출력 코드는 동일...)
 
     # 육지 그리기
     world_land_clipped.plot(ax=ax, transform=ccrs.PlateCarree(), 
