@@ -43,7 +43,7 @@ with st.sidebar:
     st.subheader("📏 Grid Settings (Individual)")
     show_grid = st.radio("Show Grid Lines", ("Y", "N"), index=0)
     # 🛠️ 경도와 위도 간격을 명확하게 분리
-    lon_interval = st.select_slider("Longitude Interval (deg)", options=[5, 10, 15, 30, 45], value=5)
+    lon_interval = st.select_slider("Longitude Interval (deg)", options=[5, 10, 15, 30, 45, 90], value=5)
     lat_interval = st.select_slider("Latitude Interval (deg)", options=[5, 10, 15, 30], value=5)
 
 # 4. 지도 생성 로직
