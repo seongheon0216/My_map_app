@@ -2,14 +2,16 @@ import streamlit as st
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import os
-from shapely.geometry import box
+import io
 import cartopy.crs as ccrs
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import matplotlib.ticker as mticker
+import numpy as np
+from shapely.geometry import box
 
 # 페이지 설정
-st.set_page_config(page_title="Map Generator Pro", layout="wide")
-st.title("🗺️ Map Generator (Flat & Curved)")
+st.set_page_config(page_title="Pro Map Generator", layout="wide")
+st.title("🗺️ Pro Map Generator (Flat & Curved)")
 st.sidebar.header("Settings")
 
 # 데이터 경로
@@ -27,8 +29,7 @@ world_land = load_data()
 # 1. 사이드바 입력
 with st.sidebar:
     st.subheader("1. Projection Type")
-    # 평면(Flat)과 곡면(Curved) 선택 메뉴 추가
-    proj_type = st.radio("Select Style", ("Flat (Straight Lines)", "Curved (Spherical View)"))
+    proj_choice = st.radio("Select Style", ("Flat", "Curved"))
     
     st.divider()
     
@@ -41,7 +42,7 @@ with st.sidebar:
     st.divider()
     
     st.subheader("3. Grid Settings")
-    show_grid = st.radio("Show Grid Lines", ("Y", "N"))
+    show_grid = st.radio("Show Grid Lines", ("Y", "N"), index=0)
     grid_interval = st.select_slider(
         "Grid Interval (degrees)",
         options=[5, 10, 15, 20, 25, 30],
@@ -50,34 +51,54 @@ with st.sidebar:
 
 # 2. 지도 생성 로직
 if world_land is not None:
+    # 중심 및 위도 범위 계산
+    center_lon = (lon_min + lon_max) / 2
+    center_lat = (lat_min + lat_max) / 2
+    lat_diff = lat_max - lat_min
+
+    # --- 핵심 1: 강력한 Clipping (계산량 감소 및 속도 향상) ---
+    # 화면에 보일 범위만 미리 잘라내서 계산 부하를 줄입니다.
+    # 여유분을 1도 정도 두어 해안선이 끊기지 않게 합니다.
+    clip_box = box(lon_min - 1, lat_min - 1, lon_max + 1, lat_max + 1)
+    world_land = world_land.clip(clip_box)
+
     # --- 투영법 결정 ---
-    if proj_type == "Curved (Spherical View)":
-        # 곡면 모드: Albers Equal Area
-        target_crs = ccrs.AlbersEqualArea(
-            central_longitude=(lon_min + lon_max) / 2,
-            central_latitude=(lat_min + lat_max) / 2,
-            standard_parallels=(lat_min, lat_max)
-        )
-        fig, ax = plt.subplots(figsize=(10, 8), dpi=300, subplot_kw={'projection': target_crs})
-        world_land_projected = world_land.to_crs(target_crs)
+    if proj_choice == "Curved":
+        # --- 핵심 2: 표준 위도(Standard Parallels) 안전 설정 ---
+        # 적도를 가로지르는 범위에서도 에러가 나지 않도록 위도 범위의 1/4, 3/4 지점을 기준으로 설정
+        p1 = lat_min + (lat_diff * 0.25)
+        p2 = lat_min + (lat_diff * 0.75)
+        
+        target_crs = ccrs.AlbersEqualArea(central_longitude=center_lon, 
+                                           central_latitude=center_lat, 
+                                           standard_parallels=(p1, p2))
     else:
-        # 평면 모드: PlateCarree (직선 위경도)
+        # Flat 모드: 직선 위경도
         target_crs = ccrs.PlateCarree()
-        fig, ax = plt.subplots(figsize=(10, 8), dpi=300, subplot_kw={'projection': target_crs})
-        world_land_projected = world_land
+
+    # --- 도화지 및 비율 보정 ---
+    # Flat 모드일 때 위도에 따른 늘어짐 방지
+    if proj_choice == "Flat":
+        aspect = 1 / np.cos(np.radians(center_lat))
+        data_ratio = (lon_max - lon_min) / (lat_max - lat_min)
+        fig_width = 10
+        fig_height = fig_width / (data_ratio / aspect)
+        fig, ax = plt.subplots(figsize=(fig_width, min(fig_height, 15)), dpi=85, subplot_kw={'projection': target_crs})
+    else:
+        fig, ax = plt.subplots(figsize=(10, 10), dpi=85, subplot_kw={'projection': target_crs})
 
     ax.set_facecolor('#FFFFFF')
 
-    # 육지 그리기
-    world_land_projected.plot(ax=ax, color='#E0E0E0', edgecolor='none')
+    # 육지 그리기 (잘려진 데이터라 빠름)
+    world_land.plot(ax=ax, transform=ccrs.PlateCarree(), color='#E0E0E0', edgecolor='#AAAAAA', linewidth=0.3)
 
-    # 범위 설정
+    # 범위 설정 (반드시 PlateCarree 좌표로 설정해야 왜곡이 없음)
     ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
 
-    # 격자선 처리
+    # 격자선 설정 (실선 '-' / 미리보기는 draw_labels=True)
     if show_grid == 'Y':
-        gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True,
-                          linestyle='-', linewidth=0.5, color='#AAAAAA', zorder=0)
+        gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True, 
+                          linestyle='-', linewidth=0.5, color='#AAAAAA')
         
         gl.top_labels = False
         gl.right_labels = False
@@ -85,9 +106,6 @@ if world_land is not None:
         gl.yformatter = LATITUDE_FORMATTER
         gl.xlocator = mticker.MultipleLocator(grid_interval)
         gl.ylocator = mticker.MultipleLocator(grid_interval)
-        
-        # 평면 모드일 때 라벨 위치가 겹치는 현상 방지
-        gl.rotate_labels = False 
     else:
         # 격자를 안 그릴 때도 외곽선은 유지
         ax.spines['geo'].set_visible(True)
@@ -95,14 +113,15 @@ if world_land is not None:
     # 3. 결과 표시
     st.pyplot(fig)
 
-    # 4. 다운로드
-    import io
+    # 4. 일러스트용 고해상도 다운로드 (300 DPI)
+    # 버튼을 누르는 순간 렌더링되도록 버퍼 활용
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches='tight', pad_inches=0.1, facecolor='#FFFFFF')
+    fig.savefig(buf, format="png", bbox_inches='tight', dpi=300, facecolor='#FFFFFF')
+    
     st.download_button(
-        label=f"📥 Download {proj_type.split()[0]} Map (PNG)",
+        label=f"📥 Download {proj_choice} Map (300 DPI PNG)",
         data=buf.getvalue(),
-        file_name="map_generator_output.png",
+        file_name=f"map_{proj_choice.lower()}_highres.png",
         mime="image/png"
     )
 else:
