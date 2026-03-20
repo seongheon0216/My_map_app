@@ -35,8 +35,8 @@ with st.sidebar:
     st.subheader("📍 Map Range")
     lon_min = st.number_input("Min Longitude", value=120.0)
     lon_max = st.number_input("Max Longitude", value=135.0)
-    lat_min = st.number_input("Min Latitude", value=-20.0)
-    lat_max = st.number_input("Max Latitude", value=20.0)
+    lat_min = st.number_input("Min Latitude", value=30.0)
+    lat_max = st.number_input("Max Latitude", value=45.0)
     
     st.divider()
     
