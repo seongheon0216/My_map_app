@@ -42,7 +42,7 @@ with st.sidebar:
     
     st.subheader("📏 Grid Settings")
     show_grid = st.radio("Show Grid Lines", ("Y", "N"), index=0)
-    grid_interval = st.select_slider("Interval (deg)", options=[5, 10, 15, 20, 25, 30], value=6)
+    grid_interval = st.select_slider("Interval (deg)", options=[5, 10, 15, 20, 25, 30], value=5)
 
 # 4. 지도 생성 메인 로직
 if world_land is not None:
