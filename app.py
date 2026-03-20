@@ -10,7 +10,7 @@ import numpy as np
 
 # 페이지 설정
 st.set_page_config(page_title="High-Res Map Generator", layout="wide")
-st.title("Map Generator ")
+st.title("Map Generator")
 
 # 데이터 경로
 current_folder = os.path.dirname(os.path.abspath(__file__))
