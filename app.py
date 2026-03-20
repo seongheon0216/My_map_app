@@ -9,7 +9,7 @@ import io
 
 # 페이지 설정
 st.set_page_config(page_title="Professional Map Generator", layout="wide")
-st.title("🗺️ Map Generator")
+st.title("🗺️ Map Generator (Auto-Switching)")
 
 # 데이터 경로 설정
 current_folder = os.path.dirname(os.path.abspath(__file__))
@@ -25,7 +25,7 @@ def load_data(path):
 # 1. 사이드바 입력 설정
 with st.sidebar:
     st.subheader("1. Projection Style")
-    proj_choice = st.radio("Select Style", ("Flat", "Curved"))
+    proj_choice = st.radio("Select Style", ("Flat (Straight)", "Curved (Conic)"))
     
     st.divider()
     
@@ -46,18 +46,20 @@ with st.sidebar:
     )
 
 # 2. 로직 처리
-lon_range = lon_max - lon_min
-lat_range = lat_max - lat_min
-# 경도 180도 또는 위도 90도 이상 차이 나면 '최대 범위'로 간주
+lon_range = abs(lon_max - lon_min)
+lat_range = abs(lat_max - lat_min)
+# 경도 180도 또는 위도 90도 이상 차이 나면 '최대 범위'로 간주 (지구본 모드)
 is_max_range = lon_range >= 179.9 or lat_range >= 89.9
 
-# 파일 선택 및 데이터 로드
+# 상황에 맞는 데이터 로드
 if is_max_range:
     world_land = load_data(land_110m)
-    st.info("🌐 Max range detected: Using 110m globe data.")
+    if world_land is not None:
+        st.info("🌐 Max range detected: Using 110m globe data.")
 else:
     world_land = load_data(land_10m)
 
+# 지도 생성 시작
 if world_land is not None:
     center_lon = (lon_min + lon_max) / 2
     center_lat = (lat_min + lat_max) / 2
@@ -70,7 +72,7 @@ if world_land is not None:
     else:
         target_crs = ccrs.PlateCarree()
 
-    # 도화지 생성 (정사각형 비율로 찌그러짐 방지)
+    # 도화지 생성 (1:1 비율로 찌그러짐 방지)
     fig, ax = plt.subplots(figsize=(10, 10), dpi=300, subplot_kw={'projection': target_crs})
     ax.set_facecolor('#FFFFFF')
 
@@ -86,6 +88,7 @@ if world_land is not None:
 
     # 격자선 설정
     if show_grid == 'Y':
+        # 지구본일 때는 라벨 숨김 (깔끔함 유지)
         gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=not is_max_range,
                           linestyle='--', linewidth=0.5, color='#AAAAAA')
         gl.xlocator = mticker.MultipleLocator(grid_interval)
@@ -96,11 +99,12 @@ if world_land is not None:
             gl.xformatter = LONGITUDE_FORMATTER
             gl.yformatter = LATITUDE_FORMATTER
 
+    # 결과 표시
     st.pyplot(fig)
 
-    # 다운로드 기능
+    # 다운로드 버튼
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches='tight', pad_inches=0.1)
     st.download_button(label="📥 Download Map", data=buf.getvalue(), file_name="custom_map.png")
 else:
-    st.error("Data file not found. Please ensure .shp files are in the repository.")error("Data file not found.")
+    st.error("Data file not found. Please ensure .shp files are in the repository.")
