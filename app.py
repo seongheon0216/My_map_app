@@ -7,9 +7,10 @@ from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import matplotlib.ticker as mticker
 import io
 import numpy as np
+from shapely.geometry import box
 
 # 페이지 설정
-st.set_page_config(page_title="High-Res Map Generator", layout="wide")
+st.set_page_config(page_title="Ultra Fast Map Generator", layout="wide")
 st.title("Map Generator")
 
 # 데이터 경로
@@ -20,7 +21,6 @@ land_110m = os.path.join(current_folder, "ne_110m_land.shp")
 @st.cache_data
 def load_data(path):
     if not os.path.exists(path): return None
-    # 10m 데이터는 무거우므로 로딩 시 캐싱을 확실히 활용합니다.
     return gpd.read_file(path)
 
 # 1. 사이드바 설정
@@ -46,11 +46,17 @@ with st.sidebar:
 center_lon = (lon_min + lon_max) / 2
 center_lat = (lat_min + lat_max) / 2
 
-# Flat/Curved는 10m(상세), Sphere는 110m(구형 최적화) 사용
 target_path = land_110m if proj_choice == "Sphere" else land_10m
 world_land = load_data(target_path)
 
 if world_land is not None:
+    # --- 핵심: 범위 제한(Clipping) 로직 ---
+    # 화면에 보일 범위만 미리 잘라내서 계산량을 줄입니다.
+    if proj_choice != "Sphere":
+        # 사용자가 설정한 범위보다 조금 더 넓게 여유분을 두고 자릅니다.
+        clip_box = box(lon_min - 2, lat_min - 2, lon_max + 2, lat_max + 2)
+        world_land = world_land.clip(clip_box)
+
     # --- 투영법 설정 ---
     if proj_choice == "Sphere":
         target_crs = ccrs.Orthographic(central_longitude=center_lon, central_latitude=center_lat)
@@ -65,14 +71,13 @@ if world_land is not None:
         data_ratio = (lon_max - lon_min) / (lat_max - lat_min)
         fig_width = 10
         fig_height = fig_width / (data_ratio / aspect)
-        # 화면 출력용 Fig 생성 (DPI 낮춤)
-        fig, ax = plt.subplots(figsize=(fig_width, min(fig_height, 15)), dpi=80, subplot_kw={'projection': target_crs})
+        fig, ax = plt.subplots(figsize=(fig_width, min(fig_height, 15)), dpi=85, subplot_kw={'projection': target_crs})
     else:
-        fig, ax = plt.subplots(figsize=(10, 10), dpi=80, subplot_kw={'projection': target_crs})
+        fig, ax = plt.subplots(figsize=(10, 10), dpi=85, subplot_kw={'projection': target_crs})
 
     ax.set_facecolor('#FFFFFF')
 
-    # 육지 그리기
+    # 육지 그리기 (이미 잘려진 데이터라 매우 빠름)
     world_land.plot(ax=ax, transform=ccrs.PlateCarree(), color='#E0E0E0', edgecolor='#AAAAAA', linewidth=0.3)
 
     if proj_choice == "Sphere":
@@ -90,19 +95,12 @@ if world_land is not None:
             gl.top_labels = gl.right_labels = False
             gl.xformatter, gl.yformatter = LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 
-    # 3. 화면 표시 (미리보기는 저해상도로 빠르게)
     st.pyplot(fig)
 
-    # 4. 고해상도 다운로드 로직
-    # 버튼을 누르는 순간 300 DPI로 다시 렌더링하여 메모리에 담습니다.
+    # 고해상도 다운로드
     buf = io.BytesIO()
+    # 저장 시에만 300 DPI로 렌더링
     fig.savefig(buf, format="png", bbox_inches='tight', dpi=300)
-    
-    st.download_button(
-        label="📥 Download Illustrator-Ready Map (300 DPI)",
-        data=buf.getvalue(),
-        file_name="map_highres.png",
-        mime="image/png"
-    )
+    st.download_button("📥 Download 300 DPI Map", data=buf.getvalue(), file_name="highres_map.png")
 else:
     st.error("Data file not found.")
