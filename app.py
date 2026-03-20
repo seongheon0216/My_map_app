@@ -6,10 +6,11 @@ import cartopy.crs as ccrs
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import matplotlib.ticker as mticker
 import io
+from shapely.geometry import Polygon
 
 # 페이지 설정
 st.set_page_config(page_title="Professional Map Generator", layout="wide")
-st.title("🗺️ Map Generator ")
+st.title("🗺️ Map Generator (Auto-Switching)")
 
 # 데이터 경로 설정
 current_folder = os.path.dirname(os.path.abspath(__file__))
@@ -18,28 +19,29 @@ land_110m = os.path.join(current_folder, "ne_110m_land.shp")
 
 @st.cache_data
 def load_and_fix_data(path, is_globe=False):
-    if os.path.exists(path):
+    if not os.path.exists(path):
+        return None
+    try:
         gdf = gpd.read_file(path)
-        if is_globe:
-            # --- 핵심 1: 지구본 모드일 때 대륙 삼각형 깨짐 해결 ---
-            # 모든 폴리곤을 유효하게 만들고 미세한 버퍼를 주어 겹침 오류를 제거합니다.
-            gdf = gdf.make_valid() 
-            gdf['geometry'] = gdf['geometry'].buffer(0)
+        # 모든 도형을 유효하게 교정
+        gdf['geometry'] = gdf.geometry.buffer(0)
         return gdf
-    return None
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return None
 
-# 1. 사이드바 입력 설정
+# 1. 사이드바 입력
 with st.sidebar:
     st.subheader("1. Projection Style")
-    proj_choice = st.radio("Select Style", ("Flat", "Curved"))
+    proj_choice = st.radio("Select Style", ("Flat (Straight)", "Curved (Conic)"))
     
     st.divider()
     
     st.subheader("2. Map Range")
-    lon_min = st.number_input("Min Longitude", value=115.0, min_value=-180.0, max_value=180.0)
-    lon_max = st.number_input("Max Longitude", value=145.0, min_value=-180.0, max_value=180.0)
-    lat_min = st.number_input("Min Latitude", value=25.0, min_value=-90.0, max_value=90.0)
-    lat_max = st.number_input("Max Latitude", value=50.0, min_value=-90.0, max_value=90.0)
+    lon_min = st.number_input("Min Longitude", value=-180.0, min_value=-180.0, max_value=180.0)
+    lon_max = st.number_input("Max Longitude", value=180.0, min_value=-180.0, max_value=180.0)
+    lat_min = st.number_input("Min Latitude", value=-90.0, min_value=-90.0, max_value=90.0)
+    lat_max = st.number_input("Max Latitude", value=90.0, min_value=-90.0, max_value=90.0)
     
     st.divider()
     
@@ -48,24 +50,21 @@ with st.sidebar:
     grid_interval = st.select_slider(
         "Grid Interval (degrees)",
         options=[5, 10, 15, 20, 25, 30],
-        value=5
+        value=30
     )
 
 # 2. 로직 처리
-lon_range = lon_max - lon_min
-lat_range = lat_max - lat_min
-# 경도 180도 또는 위도 90도 이상 차이 나면 '최대 범위'로 간주 (지구본 모드)
-is_max_range = lon_range >= 179.9 or lat_range >= 89.9
+lon_range = abs(lon_max - lon_min)
+lat_range = abs(lat_max - lat_min)
+# 전체 범위를 커버하거나 지구가 둥글게 보여야 할 때
+is_max_range = lon_range >= 170.0 or lat_range >= 85.0
 
-# 상황에 맞는 데이터를 로드하며 교정
-if is_max_range:
-    world_land = load_and_fix_data(land_110m, is_globe=True)
-    if world_land is not None:
-        st.info("🌐 Max range detected: Using 110m cleaned globe data.")
-else:
-    world_land = load_and_fix_data(land_10m, is_globe=False)
+# 데이터 로드
+target_path = land_110m if is_max_range else land_10m
+world_land = load_and_fix_data(target_path, is_globe=is_max_range)
 
 if world_land is not None:
+    # 중심 좌표 계산
     center_lon = (lon_min + lon_max) / 2
     center_lat = (lat_min + lat_max) / 2
 
@@ -77,47 +76,45 @@ if world_land is not None:
     else:
         target_crs = ccrs.PlateCarree()
 
-    # 도화지 생성 (정사각형 고정으로 찌그러짐 방지)
+    # 도화지 생성
     fig, ax = plt.subplots(figsize=(10, 10), dpi=300, subplot_kw={'projection': target_crs})
     ax.set_facecolor('#FFFFFF')
 
-    # 육지 그리기
+    # 육지 그리기 (도형 꼬임 방지를 위한 전처리 포함)
     try:
-        # 데이터 투영
-        world_land_projected = world_land.to_crs(target_crs)
-        # 육지 그리기 (edgecolor를 추가하여 경계를 명확하게 만듭니다.)
-        world_land_projected.plot(ax=ax, color='#E0E0E0', edgecolor='#AAAAAA', linewidth=0.3)
+        # 데이터 출력
+        world_land.plot(ax=ax, transform=ccrs.PlateCarree(), 
+                        color='#E0E0E0', edgecolor='#AAAAAA', linewidth=0.3)
     except Exception as e:
-        # 투영 실패 시 육지를 그리지 않고 에러 표시
-        st.warning(f"Error projecting land data: {e}. Attempting without projection.")
-        world_land.plot(ax=ax, color='#E0E0E0', edgecolor='#AAAAAA', linewidth=0.3)
+        st.warning(f"Display error: {e}")
 
-    # 범위 설정
+    # 범위 설정 (ValueError 방지 로직)
     if is_max_range:
-        ax.set_global() 
+        ax.set_global()
     else:
-        ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
+        # 미세하게 범위를 좁혀 에러 방지
+        ax.set_extent([lon_min + 0.01, lon_max - 0.01, lat_min + 0.01, lat_max - 0.01], 
+                      crs=ccrs.PlateCarree())
 
     # 격자선 설정
     if show_grid == 'Y':
-        # 지구본일 때는 라벨 숨김 (깔끔함 유지)
-        # --- 핵심 2: 점선('--')을 실선('-')으로 변경 ---
+        # linestyle='-' 로 실선 설정
         gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=not is_max_range,
-                          linestyle='-', linewidth=0.5, color='#AAAAAA')
+                          linestyle='-', linewidth=0.5, color='#AAAAAA', alpha=0.5)
         gl.xlocator = mticker.MultipleLocator(grid_interval)
         gl.ylocator = mticker.MultipleLocator(grid_interval)
+        
         if not is_max_range:
             gl.top_labels = False
             gl.right_labels = False
             gl.xformatter = LONGITUDE_FORMATTER
             gl.yformatter = LATITUDE_FORMATTER
 
-    # 3. 결과 표시
     st.pyplot(fig)
 
-    # 4. 다운로드 버튼
+    # 다운로드 버튼
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches='tight', pad_inches=0.1)
     st.download_button(label="📥 Download Map", data=buf.getvalue(), file_name="custom_map.png")
 else:
-    st.error("Data file not found. Please ensure .shp files are in the repository.")
+    st.error("Data file not found. Please check your GitHub repository.")
