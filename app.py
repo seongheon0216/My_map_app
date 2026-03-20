@@ -11,7 +11,7 @@ from shapely.geometry import box
 
 # 페이지 설정
 st.set_page_config(page_title="Ultra Fast Map Generator", layout="wide")
-st.title("Map Generator")
+st.title("🚀 Optimized Map Generator (Fast Curved Mode)")
 
 # 데이터 경로
 current_folder = os.path.dirname(os.path.abspath(__file__))
@@ -42,42 +42,47 @@ with st.sidebar:
     show_grid = st.radio("Show Grid Lines", ("Y", "N"), index=0)
     grid_interval = st.select_slider("Grid Interval", options=[5, 10, 15, 20, 25, 30], value=5)
 
-# 2. 중심점 및 데이터 선택
+# 2. 로직 처리
 center_lon = (lon_min + lon_max) / 2
 center_lat = (lat_min + lat_max) / 2
 
+# 데이터 선택 (Sphere만 110m, 나머지는 10m)
 target_path = land_110m if proj_choice == "Sphere" else land_10m
 world_land = load_data(target_path)
 
 if world_land is not None:
-    # --- 핵심: 범위 제한(Clipping) 로직 ---
-    # 화면에 보일 범위만 미리 잘라내서 계산량을 줄입니다.
+    # --- 핵심 1: 강력한 Clipping (계산량 감소) ---
     if proj_choice != "Sphere":
-        # 사용자가 설정한 범위보다 조금 더 넓게 여유분을 두고 자릅니다.
-        clip_box = box(lon_min - 2, lat_min - 2, lon_max + 2, lat_max + 2)
+        # 현재 화면 범위보다 아주 살짝만 넓게 잘라내어 CPU 부하를 방지합니다.
+        clip_margin = 1.0 
+        clip_box = box(lon_min - clip_margin, lat_min - clip_margin, 
+                       lon_max + clip_margin, lat_max + clip_margin)
+        # 잘라낸 데이터만 가지고 다음 단계로 넘어갑니다.
         world_land = world_land.clip(clip_box)
 
     # --- 투영법 설정 ---
     if proj_choice == "Sphere":
         target_crs = ccrs.Orthographic(central_longitude=center_lon, central_latitude=center_lat)
     elif proj_choice == "Curved":
+        # Curved 모드는 연산이 무거우므로 미리 잘린 데이터만 사용하게 됨
         target_crs = ccrs.AlbersEqualArea(central_longitude=center_lon, central_latitude=center_lat)
     else:
         target_crs = ccrs.PlateCarree()
 
-    # --- 가로세로 비율 보정 (Flat 모드) ---
+    # --- 핵심 2: 미리보기 DPI 최적화 ---
+    # 화면 로딩 속도를 위해 미리보기 DPI를 70~80으로 유지합니다.
     if proj_choice == "Flat":
         aspect = 1 / np.cos(np.radians(center_lat))
         data_ratio = (lon_max - lon_min) / (lat_max - lat_min)
         fig_width = 10
         fig_height = fig_width / (data_ratio / aspect)
-        fig, ax = plt.subplots(figsize=(fig_width, min(fig_height, 15)), dpi=85, subplot_kw={'projection': target_crs})
+        fig, ax = plt.subplots(figsize=(fig_width, min(fig_height, 15)), dpi=75, subplot_kw={'projection': target_crs})
     else:
-        fig, ax = plt.subplots(figsize=(10, 10), dpi=85, subplot_kw={'projection': target_crs})
+        fig, ax = plt.subplots(figsize=(10, 10), dpi=75, subplot_kw={'projection': target_crs})
 
     ax.set_facecolor('#FFFFFF')
 
-    # 육지 그리기 (이미 잘려진 데이터라 매우 빠름)
+    # 육지 그리기 (이미 클리핑된 상태라 훨씬 빠름)
     world_land.plot(ax=ax, transform=ccrs.PlateCarree(), color='#E0E0E0', edgecolor='#AAAAAA', linewidth=0.3)
 
     if proj_choice == "Sphere":
@@ -95,12 +100,13 @@ if world_land is not None:
             gl.top_labels = gl.right_labels = False
             gl.xformatter, gl.yformatter = LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 
+    # 화면 로딩
     st.pyplot(fig)
 
-    # 고해상도 다운로드
+    # 고해상도 다운로드 (300 DPI)
     buf = io.BytesIO()
-    # 저장 시에만 300 DPI로 렌더링
     fig.savefig(buf, format="png", bbox_inches='tight', dpi=300)
-    st.download_button("📥 Download 300 DPI Map", data=buf.getvalue(), file_name="highres_map.png")
+    st.download_button("📥 Download 300 DPI Image", data=buf.getvalue(), file_name="map_highres.png")
+
 else:
-    st.error("Data file not found.")
+    st.error("Data files not found.")
