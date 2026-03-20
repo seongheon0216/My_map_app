@@ -10,8 +10,8 @@ import numpy as np
 from shapely.geometry import box
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Stable Curved Map", layout="wide")
-st.title("🎡 Stable Curved Grid Map (Error-Free)")
+st.set_page_config(page_title="Ultimate Curved Map", layout="wide")
+st.title("Map Generator(Flat/Curved)")
 
 # 2. 데이터 로드
 current_folder = os.path.dirname(os.path.abspath(__file__))
@@ -33,76 +33,62 @@ with st.sidebar:
     st.divider()
     
     st.subheader("📍 Map Range")
-    lon_min = st.number_input("Min Longitude", value=90.0)
-    lon_max = st.number_input("Max Longitude", value=150.0)
-    lat_min = st.number_input("Min Latitude", value=-30.0)
-    lat_max = st.number_input("Max Latitude", value=30.0)
+    lon_min = st.number_input("Min Longitude", value=120.0)
+    lon_max = st.number_input("Max Longitude", value=135.0)
+    lat_min = st.number_input("Min Latitude", value=-20.0)
+    lat_max = st.number_input("Max Latitude", value=20.0)
     
     st.divider()
     
-    st.subheader("📏 Grid Intervals (Fixed Steps)")
+    st.subheader("📏 Grid Intervals")
     show_grid = st.radio("Show Grid Lines", ("Y", "N"), index=0)
-    # 🛠️ 요청사항: 위경도 간격 분리 및 5, 10, 15 고정
-    lon_interval = st.select_slider("Longitude Interval", options=[5, 10, 15, 30], value=10)
-    lat_interval = st.select_slider("Latitude Interval", options=[5, 10, 15, 30], value=10)
+    lon_interval = st.select_slider("Longitude Interval", options=[5, 10, 15, 30, 45, 90], value=5)
+    lat_interval = st.select_slider("Latitude Interval", options=[5, 10, 15], value=5)
 
 # 4. 지도 생성 로직
 if world_land is not None:
-    lat_diff = lat_max - lat_min
-    lon_diff = lon_max - lon_min
     center_lon = (lon_min + lon_max) / 2
     center_lat = (lat_min + lat_max) / 2
 
-    # --- [핵심] 위도 범위에 따른 에러 방지 로직 ---
+    # --- [핵심] 투영법 설정 ---
     if proj_choice == "Curved":
-        # 🛠️ 위도 간격이 넓을 때(예: 60도 이상) 발생하는 수학적 충돌 방지
-        # 표준 위도(parallels)를 실제 범위보다 안쪽으로 좁혀서 안정성을 확보합니다.
-        p1 = lat_min + (lat_diff * 0.1)
-        p2 = lat_max - (lat_diff * 0.1)
-        
-        # 적도 대칭(-30 ~ 30 등)일 때 무한대 발산 에러 방지용 미세 보정
-        if abs(p1 + p2) < 0.1: p1 -= 0.5 
-        
-        # LambertConformal이 Albers보다 광범위 위도에서 에러에 강합니다.
-        target_crs = ccrs.LambertConformal(central_longitude=center_lon, 
-                                           central_latitude=center_lat,
-                                           standard_parallels=(p1, p2))
+        # Orthographic은 지구본을 바라보는 시점으로, 어떤 위도에서도 격자가 곡선으로 나옵니다.
+        # 적도를 통과해도 절대 에러가 나지 않는 가장 강력한 곡선 투영법입니다.
+        target_crs = ccrs.Orthographic(central_longitude=center_lon, 
+                                       central_latitude=center_lat)
     else:
         target_crs = ccrs.PlateCarree()
 
-    # --- 도화지 비율 보정 ---
-    cos_lat = np.cos(np.radians(center_lat))
-    aspect = (lon_diff * cos_lat) / lat_diff
-    fig_width = 12
-    fig_height = fig_width / aspect
-    if proj_choice == "Curved": fig_height *= 0.8
-    
-    fig = plt.figure(figsize=(fig_width, min(fig_height, 15)), dpi=100)
+    # 도화지 비율 설정 (가로로 긴 기상 지도 스타일)
+    fig = plt.figure(figsize=(12, 8), dpi=100)
     ax = fig.add_subplot(1, 1, 1, projection=target_crs)
     ax.set_facecolor('#FFFFFF')
 
-    # 육지 그리기
+    # 육지 데이터 그리기
     clip_box = box(lon_min - 10, lat_min - 10, lon_max + 10, lat_max + 10)
     world_land_clipped = world_land.clip(clip_box)
     world_land_clipped.plot(ax=ax, transform=ccrs.PlateCarree(), 
-                            color='#E5E5E5', edgecolor='#888888', linewidth=0.5)
+                            color='#E0E0E0', edgecolor='#AAAAAA', linewidth=0.5)
     
+    # 맵 범위 고정
     ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
 
-    # --- 격자선 설정 (요청하신 개별 간격 적용) ---
+    # 격자선 설정 (곡선미 극대화)
     if show_grid == 'Y':
         gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True, 
-                          linestyle='-', linewidth=0.6, color='#AAAAAA', alpha=0.5)
+                          linestyle='-', linewidth=0.6, color='#888888', alpha=0.6)
         gl.top_labels = gl.right_labels = False
         gl.xformatter, gl.yformatter = LONGITUDE_FORMATTER, LATITUDE_FORMATTER
         gl.xlocator = mticker.MultipleLocator(lon_interval)
         gl.ylocator = mticker.MultipleLocator(lat_interval)
+        # 라벨 스타일
+        gl.xlabel_style = {'size': 10}
+        gl.ylabel_style = {'size': 10}
 
-    # 5. 결과 표시
     st.pyplot(fig, clear_figure=True)
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches='tight', dpi=300)
-    st.download_button(label="📥 Download Map", data=buf.getvalue(), file_name="stable_map.png")
+    st.download_button(label="📥 Download Map", data=buf.getvalue(), file_name="final_curved_map.png")
 else:
-    st.error("데이터 파일을 확인해주세요.")
+    st.error("⚠️ 데이터 파일이 없습니다.")
