@@ -11,7 +11,7 @@ from shapely.geometry import box
 
 # 1. 페이지 설정
 st.set_page_config(page_title="Ultimate Curved Map", layout="wide")
-st.title("🎡 Ultimate Curved Grid Map")
+st.title("Map Generator (Flat/Curved)")
 
 # 2. 데이터 로드
 current_folder = os.path.dirname(os.path.abspath(__file__))
@@ -42,8 +42,8 @@ with st.sidebar:
     
     st.subheader("📏 Grid Intervals")
     show_grid = st.radio("Show Grid Lines", ("Y", "N"), index=0)
-    lon_interval = st.slider("Lon Interval", 1, 30, 5)
-    lat_interval = st.slider("Lat Interval", 1, 30, 5)
+    lon_interval = st.select_slider("Longitude Interval", options=[5, 10, 15, 30, 45, 90], value=5)
+    lat_interval = st.select_slider("Latitude Interval", options=[5, 10, 15, 30], value=5)
 
 # 4. 지도 생성 로직
 if world_land is not None:
