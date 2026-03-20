@@ -10,7 +10,7 @@ import numpy as np
 from shapely.geometry import box
 
 # 1. 페이지 설정 및 제목
-st.set_page_config(page_title="Universal High-Res Map", layout="wide")
+st.set_page_config(page_title="Universal High-Res Map Pro", layout="wide")
 st.title("Map Generator (Flat/Curved)")
 
 # 2. 데이터 로드 (전세계 데이터)
@@ -67,23 +67,25 @@ if world_land is not None:
             target_crs = ccrs.AlbersEqualArea(central_longitude=center_lon, 
                                                central_latitude=center_lat, 
                                                standard_parallels=(p1, p2))
+            
+            # --- [핵심 수정] Curved 모드 도화지 비율 최적화 (가로 압축 해결) ---
+            # 수동 보정을 끄고, 기본 정사각형 기반 도화지 사용.
+            # Albers 투영은 수평 방향 압축이 있으므로, 데이터 비율을 그대로 쓰면 도화지가 세로로 너무 깁니다.
+            fig_width = 10
+            # Albers 투영 자체 보정 기능을 활용하기 위해, np.cos 값으로 세로 비율만 아주 미세하게 줄여줍니다.
+            aspect_adjust = np.cos(np.radians(center_lat)) 
+            fig_height = (fig_width / (lon_diff / lat_diff)) * aspect_adjust
+            fig, ax = plt.subplots(figsize=(fig_width, min(fig_height, 15)), dpi=80, subplot_kw={'projection': target_crs})
+        
         else:
+            # Flat 모드: 직선 위경도 투영
             target_crs = ccrs.PlateCarree()
-
-        # --- [핵심 수정] 가로세로 비율(figsize) 설정 ---
-        # Flat 모드와 Curved 모드 모두에 대해 수학적으로 비율을 계산합니다.
-        data_ratio = lon_diff / lat_diff
-        
-        # 위도에 따른 왜곡 보정값 계산
-        aspect = 1 / np.cos(np.radians(center_lat))
-        
-        fig_width = 10
-        # Curved 모드와 Flat 모드 모두 이 aspect 값을 활용해 최종 세로 비율을 결정합니다.
-        # 이렇게 하면 Curved 모드에서 가로로 구겨지거나 Flat 모드에서 늘어지는 현상이 사라집니다.
-        fig_height = fig_width / (data_ratio / aspect)
-        
-        # 화면 미리보기는 속도를 위해 dpi=80
-        fig, ax = plt.subplots(figsize=(fig_width, min(fig_height, 15)), dpi=80, subplot_kw={'projection': target_crs})
+            # Flat 모드 수동 비율 보정 유지 (가로 늘어짐 방지)
+            aspect = 1 / np.cos(np.radians(center_lat))
+            data_ratio = lon_diff / lat_diff
+            fig_width = 10
+            fig_height = fig_width / (data_ratio / aspect)
+            fig, ax = plt.subplots(figsize=(fig_width, min(fig_height, 15)), dpi=80, subplot_kw={'projection': target_crs})
 
         # --- 지도 시각화 설정 ---
         ax.set_facecolor('#FFFFFF') # 배경색 흰색
@@ -99,21 +101,4 @@ if world_land is not None:
         if show_grid == 'Y':
             gl = ax.gridlines(crs=ccrs.PlateCarree(), draw_labels=True, 
                               linestyle='-', linewidth=0.5, color='#AAAAAA', alpha=0.7)
-            gl.top_labels = gl.right_labels = False
-            gl.xformatter, gl.yformatter = LONGITUDE_FORMATTER, LATITUDE_FORMATTER
-            gl.xlocator = mticker.MultipleLocator(grid_interval)
-            gl.ylocator = mticker.MultipleLocator(grid_interval)
-
-        # 5. 결과 표시 및 고해상도 다운로드
-        st.pyplot(fig)
-
-        # 다운로드 시에만 300 DPI 렌더링
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", bbox_inches='tight', dpi=300, facecolor='#FFFFFF')
-        
-        st.download_button(label="📥 Download High-Res Map (300 DPI)", 
-                           data=buf.getvalue(), 
-                           file_name=f"map_output.png", 
-                           mime="image/png")
-else:
-    st.error("⚠️ 데이터 파일을 찾을 수 없습니다.")
+            gl.top_labels
